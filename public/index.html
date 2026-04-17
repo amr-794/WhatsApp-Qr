@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>واتس CRM — إدارة خدمة العملاء</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+  :root {
+    --green:      #25D366;
+    --green-dim:  #128C7E;
+    --green-glow: rgba(37,211,102,.18);
+    --bg:         #0d1117;
+    --bg2:        #161b22;
+    --bg3:        #1c2128;
+    --bg4:        #21262d;
+    --border:     rgba(255,255,255,.07);
+    --text:       #e6edf3;
+    --muted:      #7d8590;
+    --danger:     #f85149;
+    --warn:       #d29922;
+    --radius:     12px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Cairo', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+  /* ── Layout ── */
+  #app { display: flex; height: 100vh; }
+  #sidebar {
+    width: 68px; background: var(--bg2); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 4px;
+    flex-shrink: 0; z-index: 10;
+  }
+  #sidebar .logo {
+    width: 42px; height: 42px; background: var(--green); border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 16px; flex-shrink: 0;
+  }
+  #sidebar .logo svg { width: 24px; height: 24px; fill: #000; }
+  .nav-btn {
+    width: 44px; height: 44px; border-radius: 10px; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all .2s; position: relative;
+  }
+  .nav-btn svg { width: 20px; height: 20px; }
+  .nav-btn:hover { background: var(--bg4); color: var(--text); }
+  .nav-btn.active { background: var(--green-glow); color: var(--green); }
+  .nav-btn .badge {
+    position: absolute; top: 6px; right: 6px; width: 8px; height: 8px;
+    background: var(--green); border-radius: 50%; border: 2px solid var(--bg2);
+  }
+  #sidebar .spacer { flex: 1; }
+
+  #main { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Panel ── */
+  .panel {
+    width: 320px; background: var(--bg2); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .panel-header {
+    padding: 20px 16px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .panel-header h2 { font-size: 15px; font-weight: 700; }
+  .btn-icon {
+    width: 32px; height: 32px; border-radius: 8px; border: none;
+    background: var(--bg4); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all .15s;
+  }
+  .btn-icon:hover { background: var(--green); color: #000; }
+  .btn-icon svg { width: 16px; height: 16px; }
+
+  /* ── Search ── */
+  .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .search-wrap input {
+    width: 100%; padding: 8px 12px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px; outline: none;
+  }
+  .search-wrap input::placeholder { color: var(--muted); }
+  .search-wrap input:focus { border-color: var(--green); }
+
+  /* ── Conversation List ── */
+  #conv-list { flex: 1; overflow-y: auto; }
+  #conv-list::-webkit-scrollbar { width: 4px; }
+  #conv-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .conv-item {
+    padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: flex-start; transition: background .15s;
+  }
+  .conv-item:hover { background: var(--bg3); }
+  .conv-item.active { background: var(--bg4); border-right: 3px solid var(--green); }
+  .conv-avatar {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--bg4);
+    display: flex; align-items: center; justify-content: center; font-weight: 700;
+    font-size: 14px; color: var(--green); flex-shrink: 0;
+  }
+  .conv-info { flex: 1; min-width: 0; }
+  .conv-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-preview { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .conv-time { font-size: 10px; color: var(--muted); }
+  .conv-badge {
+    background: var(--green); color: #000; font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 10px; min-width: 18px; text-align: center;
+  }
+  .tag-agent {
+    font-size: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(37,211,102,.15); color: var(--green);
+  }
+  .tag-closed { background: rgba(125,133,144,.15); color: var(--muted); }
+
+  /* ── Chat Area ── */
+  #chat-area {
+    flex: 1; display: flex; flex-direction: column; background: var(--bg);
+    background-image: radial-gradient(circle at 20% 80%, rgba(37,211,102,.03) 0%, transparent 60%),
+                      radial-gradient(circle at 80% 20%, rgba(18,140,126,.04) 0%, transparent 60%);
+  }
+  #chat-placeholder {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--muted);
+  }
+  #chat-placeholder svg { width: 64px; height: 64px; opacity: .2; }
+  #chat-placeholder p { font-size: 14px; }
+
+  #chat-header {
+    padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg2);
+    display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  #chat-header .info { flex: 1; }
+  #chat-header .name { font-size: 15px; font-weight: 700; }
+  #chat-header .sub  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .chat-actions { display: flex; gap: 8px; }
+
+  #messages-wrap { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+  #messages-wrap::-webkit-scrollbar { width: 4px; }
+  #messages-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg { max-width: 70%; display: flex; flex-direction: column; }
+  .msg.out { align-self: flex-start; }
+  .msg.in  { align-self: flex-end; }
+  .msg-bubble {
+    padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+    word-break: break-word;
+  }
+  .msg.in  .msg-bubble { background: var(--green); color: #000; border-bottom-left-radius: 3px; }
+  .msg.out .msg-bubble { background: var(--bg3); color: var(--text); border-bottom-right-radius: 3px; }
+  .msg-time { font-size: 10px; color: var(--muted); margin-top: 3px; align-self: flex-end; }
+
+  #chat-input-wrap {
+    padding: 12px 20px; background: var(--bg2); border-top: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0;
+  }
+  #msg-input {
+    flex: 1; padding: 10px 14px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); font-family: inherit; font-size: 13px;
+    outline: none; resize: none; max-height: 120px; min-height: 40px; line-height: 1.4;
+  }
+  #msg-input:focus { border-color: var(--green); }
+  #send-btn {
+    width: 40px; height: 40px; border-radius: 10px; border: none;
+    background: var(--green); color: #000; cursor: pointer; display: flex;
+    align-items: center; justify-content: center; flex-shrink: 0; transition: opacity .15s;
+  }
+  #send-btn:hover { opacity: .85; }
+  #send-btn svg { width: 18px; height: 18px; }
+
+  /* ── Right panel (details) ── */
+  #detail-panel {
+    width: 280px; background: var(--bg2); border-right: 1px solid var(--border);
+    flex-shrink: 0; overflow-y: auto; display: none; flex-direction: column; gap: 0;
+  }
+  #detail-panel.open { display: flex; }
+  .detail-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .detail-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+  .detail-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .detail-row label { font-size: 11px; color: var(--muted); }
+  .detail-row select, .detail-row input {
+    padding: 7px 10px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px; outline: none;
+  }
+  .detail-row select:focus, .detail-row input:focus { border-color: var(--green); }
+  .stars { display: flex; gap: 4px; flex-direction: row-reverse; justify-content: flex-end; }
+  .star-btn { background: none; border: none; cursor: pointer; font-size: 22px; color: var(--border); transition: color .1s; }
+  .star-btn.active, .star-btn:hover ~ .star-btn { color: var(--warn); }
+  .star-btn:hover { color: var(--warn); }
+
+  /* ── Pages ── */
+  .page { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .page.active { display: flex; }
+  .page-header {
+    padding: 24px 28px 18px; border-bottom: 1px solid var(--border); background: var(--bg2);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-body { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .page-body::-webkit-scrollbar { width: 4px; }
+  .page-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ── Button ── */
+  .btn {
+    padding: 9px 18px; border-radius: 9px; border: none; font-family: inherit;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--green); color: #000; }
+  .btn-primary:hover { opacity: .85; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { border-color: var(--green); color: var(--green); }
+  .btn-danger  { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid rgba(248,81,73,.3); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+
+  /* ── Stats cards ── */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stat-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .stat-card .value { font-size: 32px; font-weight: 700; line-height: 1; }
+  .stat-card .value.green { color: var(--green); }
+  .stat-card .value.warn  { color: var(--warn); }
+  .stat-card .value.red   { color: var(--danger); }
+
+  /* ── Agent table ── */
+  .table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { padding: 12px 16px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--bg3); }
+  tbody td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--bg3); }
+
+  /* ── Sessions grid ── */
+  .sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .session-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .session-card .s-name { font-size: 15px; font-weight: 700; }
+  .session-card .s-phone { font-size: 12px; color: var(--muted); }
+  .s-status {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .s-status .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .s-status.ready   { background: rgba(37,211,102,.12); color: var(--green); }
+  .s-status.ready .dot { background: var(--green); }
+  .s-status.qr      { background: rgba(210,153,34,.12); color: var(--warn); }
+  .s-status.qr .dot { background: var(--warn); animation: pulse 1s infinite; }
+  .s-status.offline, .s-status.disconnected { background: rgba(125,133,144,.1); color: var(--muted); }
+  .s-status.offline .dot, .s-status.disconnected .dot { background: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.3 } }
+
+  /* ── QR modal ── */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
+    display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+    padding: 32px; max-width: 360px; width: 90%; text-align: center; display: flex; flex-direction: column; gap: 16px;
+  }
+  .modal h3 { font-size: 18px; font-weight: 700; }
+  .modal p  { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  #qr-img { width: 220px; height: 220px; border-radius: 12px; margin: 0 auto; background: #fff; }
+
+  /* ── Form row ── */
+  .form-row { display: flex; gap: 10px; align-items: flex-end; }
+  .form-field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .form-field label { font-size: 12px; color: var(--muted); }
+  .form-field input {
+    padding: 9px 12px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 9px; color: var(--text); font-family: inherit; font-size: 13px; outline: none;
+  }
+  .form-field input:focus { border-color: var(--green); }
+
+  /* ── Toast ── */
+  #toast-wrap { position: fixed; bottom: 20px; left: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    animation: slide-in .25s ease; max-width: 280px;
+  }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error   { border-color: var(--danger); color: var(--danger); }
+  @keyframes slide-in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── Misc ── */
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+  .hidden { display: none !important; }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 14px; }
+  .rating-stars { font-size: 14px; }
+  .filter-bar { display: flex; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+  .filter-chip {
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .filter-chip.active { background: var(--green-glow); color: var(--green); border-color: var(--green); }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>
+    </div>
+    <button class="nav-btn active" onclick="showPage('convs')" title="المحادثات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="badge" id="badge-convs" style="display:none"></span>
+    </button>
+    <button class="nav-btn" onclick="showPage('sessions')" title="الجلسات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+    </button>
+    <button class="nav-btn" onclick="showPage('agents')" title="الموظفين">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </button>
+    <button class="nav-btn" onclick="showPage('stats')" title="الإحصائيات">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    </button>
+    <div class="spacer"></div>
+    <div id="conn-dot" class="nav-btn" title="حالة الاتصال" style="cursor:default">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+    </div>
+  </nav>
+
+  <div id="main">
+
+    <!-- ════════ CONVERSATIONS PAGE ════════ -->
+    <div id="page-convs" class="page active" style="flex-direction:row;flex:1;">
+      <!-- Left: conversation list -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>المحادثات</h2>
+          <button class="btn-icon" onclick="toggleDetailPanel()" title="تفاصيل">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          </button>
+        </div>
+        <div class="filter-bar">
+          <button class="filter-chip active" onclick="setFilter('all',this)">الكل</button>
+          <button class="filter-chip" onclick="setFilter('open',this)">مفتوحة</button>
+          <button class="filter-chip" onclick="setFilter('closed',this)">مغلقة</button>
+        </div>
+        <div class="search-wrap">
+          <input type="text" placeholder="🔍 بحث في المحادثات…" oninput="filterConvs(this.value)">
+        </div>
+        <div id="conv-list"></div>
+      </div>
+
+      <!-- Center: chat -->
+      <div id="chat-area">
+        <div id="chat-placeholder">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <p>اختر محادثة للبدء</p>
+        </div>
+        <div id="chat-view" class="hidden" style="display:none;flex:1;flex-direction:column;">
+          <div id="chat-header">
+            <div class="conv-avatar" id="ch-avatar">؟</div>
+            <div class="info">
+              <div class="name" id="ch-name">—</div>
+              <div class="sub"  id="ch-phone">—</div>
+            </div>
+            <div class="chat-actions">
+              <button class="btn-icon" id="btn-close-conv" title="إغلاق المحادثة" onclick="closeConv()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="messages-wrap"></div>
+          <div id="chat-input-wrap">
+            <textarea id="msg-input" placeholder="اكتب رسالة…" rows="1" onkeydown="msgKeydown(event)" oninput="autoResize(this)"></textarea>
+            <button id="send-btn" onclick="sendMessage()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: details -->
+      <div id="detail-panel">
+        <div class="detail-section">
+          <h4>تفاصيل المحادثة</h4>
+          <div class="detail-row">
+            <label>تعيين إلى</label>
+            <select id="dp-agent" onchange="assignAgent(this.value)">
+              <option value="">— بدون تعيين —</option>
+            </select>
+          </div>
+          <div class="detail-row">
+            <label>الحالة</label>
+            <select id="dp-status" onchange="changeStatus(this.value)">
+              <option value="open">مفتوحة</option>
+              <option value="closed">مغلقة</option>
+            </select>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h4>تقييم العميل</h4>
+          <div class="stars" id="star-rating">
+            <button class="star-btn" data-v="5" onclick="setRating(5)">★</button>
+            <button class="star-btn" data-v="4" onclick="setRating(4)">★</button>
+            <button class="star-btn" data-v="3" onclick="setRating(3)">★</button>
+            <button class="star-btn" data-v="2" onclick="setRating(2)">★</button>
+            <button class="star-btn" data-v="1" onclick="setRating(1)">★</button>
+          </div>
+        </div>
+        <div class="detail-section">
+          <h4>معلومات</h4>
+          <div id="dp-info" style="font-size:12px;color:var(--muted);line-height:1.8;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ SESSIONS PAGE ════════ -->
+    <div id="page-sessions" class="page">
+      <div class="page-header">
+        <h1>جلسات واتساب</h1>
+        <button class="btn btn-primary" onclick="openAddSession()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          إضافة رقم
+        </button>
+      </div>
+      <div class="page-body">
+        <p class="section-title">اربط أرقام واتساب بـ QR Code — كل رقم جلسة مستقلة</p>
+        <div id="sessions-grid" class="sessions-grid"></div>
+      </div>
+    </div>
+
+    <!-- ════════ AGENTS PAGE ════════ -->
+    <div id="page-agents" class="page">
+      <div class="page-header">
+        <h1>الموظفون</h1>
+        <button class="btn btn-primary" onclick="openAddAgent()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          إضافة موظف
+        </button>
+      </div>
+      <div class="page-body">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>البريد</th><th>المحادثات</th><th>تم الإغلاق</th><th>التقييم</th><th></th></tr></thead>
+            <tbody id="agents-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ STATS PAGE ════════ -->
+    <div id="page-stats" class="page">
+      <div class="page-header">
+        <h1>الإحصائيات</h1>
+        <button class="btn btn-outline" onclick="loadStats()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-3.51"/></svg>
+          تحديث
+        </button>
+      </div>
+      <div class="page-body">
+        <div class="stats-grid" id="stats-cards"></div>
+        <p class="section-title">أداء الموظفين</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الموظف</th><th>إجمالي المحادثات</th><th>مغلقة</th><th>متوسط التقييم</th></tr></thead>
+            <tbody id="agent-stats-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end main -->
+</div><!-- end app -->
+
+<!-- Modals -->
+<div id="qr-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>ربط واتساب</h3>
+    <p>افتح واتساب على هاتفك ← الأجهزة المرتبطة ← ربط جهاز، ثم امسح الكود</p>
+    <img id="qr-img" src="" alt="QR Code">
+    <p id="qr-status" style="color:var(--green);font-weight:600;"></p>
+    <button class="btn btn-outline" onclick="closeModal('qr-modal')">إغلاق</button>
+  </div>
+</div>
+
+<div id="add-session-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>إضافة جلسة جديدة</h3>
+    <div class="form-field" style="text-align:right">
+      <label>اسم الجلسة (مثال: دعم فني، مبيعات…)</label>
+      <input type="text" id="new-session-name" placeholder="اسم الجلسة">
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" style="flex:1" onclick="addSession()">إنشاء وربط</button>
+      <button class="btn btn-outline" onclick="closeModal('add-session-modal')">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<div id="add-agent-modal" class="modal-backdrop hidden">
+  <div class="modal" style="text-align:right">
+    <h3>إضافة موظف</h3>
+    <div class="form-field">
+      <label>الاسم</label>
+      <input type="text" id="new-agent-name" placeholder="اسم الموظف">
+    </div>
+    <div class="form-field" style="margin-top:10px">
+      <label>البريد الإلكتروني (اختياري)</label>
+      <input type="email" id="new-agent-email" placeholder="email@example.com">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-primary" style="flex:1" onclick="addAgent()">إضافة</button>
+      <button class="btn btn-outline" onclick="closeModal('add-agent-modal')">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+let conversations = [], agents = [], sessions = [];
+let currentConvId = null, convFilter = 'all', convSearch = '';
+
+// ═══════════════════════════════════════════════════════════════════
+// SOCKET.IO
+// ═══════════════════════════════════════════════════════════════════
+const socket = io();
+
+socket.on('connect',    () => setConnDot(true));
+socket.on('disconnect', () => setConnDot(false));
+
+socket.on('qr', ({ sessionId, qrImage }) => {
+  document.getElementById('qr-img').src = qrImage;
+  document.getElementById('qr-status').textContent = 'في انتظار المسح…';
+  document.getElementById('qr-modal').classList.remove('hidden');
+  updateSessionCard(sessionId, 'qr');
+});
+
+socket.on('session_update', ({ sessionId, status, phone }) => {
+  updateSessionCard(sessionId, status, phone);
+  if (status === 'ready') {
+    document.getElementById('qr-status').textContent = '✅ تم الربط بنجاح!';
+    setTimeout(() => closeModal('qr-modal'), 1800);
+    toast('تم ربط الجلسة بنجاح', 'success');
+    loadSessions();
+  }
+});
+
+socket.on('new_message', ({ sessionId, conversation, conversationId, message }) => {
+  // Update conv list
+  if (conversation) {
+    const idx = conversations.findIndex(c => c.id === conversation.id);
+    if (idx >= 0) conversations[idx] = conversation;
+    else conversations.unshift(conversation);
+    renderConvList();
+    if (currentConvId !== conversation.id) showBadge();
+  }
+  // If viewing this conv, append message
+  if (message && (conversationId || conversation?.id) === currentConvId) {
+    appendMsg(message);
+    scrollBottom();
+  }
+});
+
+socket.on('conversation_updated', ({ id, ...data }) => {
+  const c = conversations.find(c => c.id === id);
+  if (c) Object.assign(c, data);
+  renderConvList();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+function showPage(p) {
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(`page-${p}`).classList.add('active');
+  event?.currentTarget?.classList.add('active');
+  if (p === 'convs')    { loadConversations(); loadAgents(); }
+  if (p === 'sessions') loadSessions();
+  if (p === 'agents')   loadAgentsPage();
+  if (p === 'stats')    loadStats();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONVERSATIONS
+// ═══════════════════════════════════════════════════════════════════
+async function loadConversations() {
+  const r = await api('/api/conversations');
+  conversations = r;
+  renderConvList();
+}
+
+function renderConvList() {
+  let list = [...conversations];
+  if (convFilter !== 'all') list = list.filter(c => c.status === convFilter);
+  if (convSearch) {
+    const q = convSearch.toLowerCase();
+    list = list.filter(c => (c.contact_name||'').toLowerCase().includes(q) || c.phone.includes(q));
+  }
+  const el = document.getElementById('conv-list');
+  if (!list.length) { el.innerHTML = '<div class="empty">لا توجد محادثات</div>'; return; }
+  el.innerHTML = list.map(c => `
+    <div class="conv-item ${c.id === currentConvId ? 'active' : ''}" onclick="openConv(${c.id})">
+      <div class="conv-avatar">${(c.contact_name||c.phone||'؟')[0]}</div>
+      <div class="conv-info">
+        <div class="conv-name">${esc(c.contact_name || c.phone)}</div>
+        <div class="conv-preview">${esc(c.last_message || 'لا توجد رسائل')}</div>
+        ${c.agent_name ? `<span class="tag-agent">${esc(c.agent_name)}</span>` : ''}
+      </div>
+      <div class="conv-meta">
+        <span class="conv-time">${fmtTime(c.last_message_at || c.updated_at)}</span>
+        ${c.status==='closed' ? '<span class="tag-agent tag-closed">مغلقة</span>' : ''}
+        ${c.rating ? '<span class="rating-stars">'+'★'.repeat(c.rating)+'</span>' : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function openConv(id) {
+  currentConvId = id;
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  renderConvList();
+
+  document.getElementById('chat-placeholder').style.display = 'none';
+  const cv = document.getElementById('chat-view');
+  cv.style.display = 'flex';
+  cv.classList.remove('hidden');
+
+  document.getElementById('ch-name').textContent  = conv.contact_name || conv.phone;
+  document.getElementById('ch-phone').textContent = conv.phone;
+  document.getElementById('ch-avatar').textContent = (conv.contact_name || conv.phone || '؟')[0];
+
+  // load messages
+  const msgs = await api(`/api/conversations/${id}/messages`);
+  const wrap = document.getElementById('messages-wrap');
+  wrap.innerHTML = msgs.map(renderMsg).join('');
+  scrollBottom();
+
+  // detail panel
+  updateDetailPanel(conv);
+}
+
+function renderMsg(m) {
+  const cls = m.type === 'incoming' ? 'in' : 'out';
+  return `<div class="msg ${cls}">
+    <div class="msg-bubble">${esc(m.body)}</div>
+    <div class="msg-time">${fmtTime(m.timestamp)}</div>
+  </div>`;
+}
+
+function appendMsg(m) {
+  document.getElementById('messages-wrap').insertAdjacentHTML('beforeend', renderMsg(m));
+}
+
+async function sendMessage() {
+  if (!currentConvId) return;
+  const inp = document.getElementById('msg-input');
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = ''; inp.style.height = '';
+  try {
+    await api(`/api/conversations/${currentConvId}/messages`, 'POST', { message: msg });
+  } catch(e) { toast('فشل الإرسال: ' + e.message, 'error'); }
+}
+
+function msgKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function scrollBottom() {
+  const w = document.getElementById('messages-wrap');
+  w.scrollTop = w.scrollHeight;
+}
+
+async function closeConv() {
+  if (!currentConvId) return;
+  await api(`/api/conversations/${currentConvId}`, 'PATCH', { status: 'closed' });
+  const c = conversations.find(c => c.id === currentConvId);
+  if (c) c.status = 'closed';
+  updateDetailPanel(c);
+  renderConvList();
+  toast('تم إغلاق المحادثة', 'success');
+}
+
+// ─ Detail Panel ─
+function toggleDetailPanel() {
+  document.getElementById('detail-panel').classList.toggle('open');
+}
+
+function updateDetailPanel(conv) {
+  if (!conv) return;
+  const dp = document.getElementById('detail-panel');
+  if (!dp.classList.contains('open')) dp.classList.add('open');
+
+  // populate agent select
+  const sel = document.getElementById('dp-agent');
+  sel.innerHTML = '<option value="">— بدون تعيين —</option>' +
+    agents.map(a => `<option value="${a.id}" ${a.id===conv.agent_id?'selected':''}>${esc(a.name)}</option>`).join('');
+
+  document.getElementById('dp-status').value = conv.status || 'open';
+
+  // stars
+  document.querySelectorAll('.star-btn').forEach(b => {
+    b.classList.toggle('active', +b.dataset.v <= (conv.rating || 0));
+  });
+
+  // info
+  document.getElementById('dp-info').innerHTML = `
+    <div>📞 ${esc(conv.phone)}</div>
+    <div>📅 ${fmtDate(conv.created_at)}</div>
+    <div>💬 ${conv.incoming_count || 0} رسالة واردة</div>
+  `;
+}
+
+async function assignAgent(agentId) {
+  if (!currentConvId) return;
+  await api(`/api/conversations/${currentConvId}`, 'PATCH', { agent_id: agentId || null });
+  const c = conversations.find(c => c.id === currentConvId);
+  if (c) {
+    c.agent_id = agentId ? +agentId : null;
+    c.agent_name = agents.find(a => a.id === +agentId)?.name || null;
+  }
+  renderConvList();
+  toast('تم التعيين', 'success');
+}
+
+async function changeStatus(status) {
+  if (!currentConvId) return;
+  await api(`/api/conversations/${currentConvId}`, 'PATCH', { status });
+  const c = conversations.find(c => c.id === currentConvId);
+  if (c) c.status = status;
+  renderConvList();
+}
+
+async function setRating(v) {
+  if (!currentConvId) return;
+  await api(`/api/conversations/${currentConvId}/rate`, 'POST', { rating: v });
+  const c = conversations.find(c => c.id === currentConvId);
+  if (c) c.rating = v;
+  document.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', +b.dataset.v <= v));
+  toast('تم حفظ التقييم ⭐', 'success');
+}
+
+function setFilter(f, el) {
+  convFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  renderConvList();
+}
+function filterConvs(q) { convSearch = q; renderConvList(); }
+
+// ═══════════════════════════════════════════════════════════════════
+// SESSIONS
+// ═══════════════════════════════════════════════════════════════════
+async function loadSessions() {
+  sessions = await api('/api/sessions');
+  renderSessions();
+}
+
+function renderSessions() {
+  const g = document.getElementById('sessions-grid');
+  if (!sessions.length) { g.innerHTML = '<div class="empty">لا توجد جلسات — أضف رقماً للبدء</div>'; return; }
+  g.innerHTML = sessions.map(s => {
+    const st = s.live_status || s.status || 'offline';
+    const stLabel = { ready:'متصل', qr:'في انتظار QR', initializing:'جاري التهيئة', disconnected:'منقطع', offline:'غير متصل', auth_failure:'خطأ في المصادقة' }[st] || st;
+    return `<div class="session-card" id="sc-${s.id}">
+      <div class="s-name">${esc(s.name)}</div>
+      ${s.phone ? `<div class="s-phone">+${esc(s.phone)}</div>` : ''}
+      <span class="s-status ${st}"><span class="dot"></span>${stLabel}</span>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        ${st!=='ready' ? `<button class="btn btn-outline" style="flex:1;font-size:12px" onclick="reconnectSession('${s.id}','${esc(s.name)}')">إعادة ربط</button>` : ''}
+        <button class="btn btn-danger" style="font-size:12px" onclick="deleteSession('${s.id}')">حذف</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateSessionCard(sessionId, status, phone) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (s) { s.live_status = status; if (phone) s.phone = phone; }
+  renderSessions();
+}
+
+function openAddSession() {
+  document.getElementById('new-session-name').value = '';
+  document.getElementById('add-session-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('new-session-name').focus(), 50);
+}
+
+async function addSession() {
+  const name = document.getElementById('new-session-name').value.trim();
+  if (!name) return toast('أدخل اسم الجلسة', 'error');
+  closeModal('add-session-modal');
+  const r = await api('/api/sessions', 'POST', { name });
+  sessions.push({ ...r, live_status: 'initializing' });
+  renderSessions();
+  toast('جاري تهيئة الجلسة…');
+}
+
+async function reconnectSession(id, name) {
+  await api(`/api/sessions/${id}`, 'DELETE');
+  sessions = sessions.filter(s => s.id !== id);
+  const r = await api('/api/sessions', 'POST', { name });
+  sessions.push({ ...r, live_status: 'initializing' });
+  renderSessions();
+  toast('جاري إعادة الربط…');
+}
+
+async function deleteSession(id) {
+  if (!confirm('حذف الجلسة؟ سيتم قطع الاتصال.')) return;
+  await api(`/api/sessions/${id}`, 'DELETE');
+  sessions = sessions.filter(s => s.id !== id);
+  renderSessions();
+  toast('تم الحذف', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AGENTS
+// ═══════════════════════════════════════════════════════════════════
+async function loadAgents() {
+  agents = await api('/api/agents');
+}
+
+async function loadAgentsPage() {
+  await loadAgents();
+  const tb = document.getElementById('agents-tbody');
+  if (!agents.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">لا يوجد موظفون</td></tr>'; return; }
+  tb.innerHTML = agents.map(a => `<tr>
+    <td><strong>${esc(a.name)}</strong></td>
+    <td style="color:var(--muted)">${esc(a.email||'—')}</td>
+    <td>—</td><td>—</td><td>—</td>
+    <td><button class="btn btn-danger" style="font-size:11px;padding:5px 10px" onclick="deleteAgent(${a.id})">حذف</button></td>
+  </tr>`).join('');
+}
+
+function openAddAgent() {
+  document.getElementById('new-agent-name').value = '';
+  document.getElementById('new-agent-email').value = '';
+  document.getElementById('add-agent-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('new-agent-name').focus(), 50);
+}
+
+async function addAgent() {
+  const name  = document.getElementById('new-agent-name').value.trim();
+  const email = document.getElementById('new-agent-email').value.trim();
+  if (!name) return toast('أدخل اسم الموظف', 'error');
+  const a = await api('/api/agents', 'POST', { name, email });
+  agents.push(a);
+  closeModal('add-agent-modal');
+  loadAgentsPage();
+  toast('تم الإضافة', 'success');
+}
+
+async function deleteAgent(id) {
+  if (!confirm('حذف الموظف؟')) return;
+  await api(`/api/agents/${id}`, 'DELETE');
+  agents = agents.filter(a => a.id !== id);
+  loadAgentsPage();
+  toast('تم الحذف', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════════════════════
+async function loadStats() {
+  const s = await api('/api/stats');
+  document.getElementById('stats-cards').innerHTML = `
+    <div class="stat-card"><div class="label">إجمالي المحادثات</div><div class="value">${s.total}</div></div>
+    <div class="stat-card"><div class="label">مفتوحة</div><div class="value green">${s.open}</div></div>
+    <div class="stat-card"><div class="label">مغلقة</div><div class="value">${s.closed}</div></div>
+    <div class="stat-card"><div class="label">رسائل اليوم</div><div class="value green">${s.todayMessages}</div></div>
+    <div class="stat-card"><div class="label">متوسط التقييم</div><div class="value warn">${s.avgRating ? s.avgRating + ' ★' : '—'}</div></div>
+  `;
+  const tb = document.getElementById('agent-stats-tbody');
+  if (!s.agentStats?.length) { tb.innerHTML = '<tr><td colspan="4" class="empty">لا يوجد موظفون</td></tr>'; return; }
+  tb.innerHTML = s.agentStats.map(a => `<tr>
+    <td><strong>${esc(a.name)}</strong></td>
+    <td>${a.total || 0}</td>
+    <td>${a.closed || 0}</td>
+    <td>${a.avg_rating ? a.avg_rating + ' ★' : '—'}</td>
+  </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+async function api(url, method = 'GET', body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) { const e = await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = ts > 1e10 ? new Date(ts) : new Date(ts * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('ar-EG', {hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('ar-EG', {day:'2-digit',month:'2-digit'});
+}
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date((ts > 1e10 ? ts : ts*1000)).toLocaleString('ar-EG');
+}
+
+function toast(msg, type = '') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.getElementById('toast-wrap').appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function setConnDot(on) {
+  const d = document.getElementById('conn-dot');
+  d.style.color = on ? 'var(--green)' : 'var(--muted)';
+}
+
+function showBadge() {
+  const b = document.getElementById('badge-convs');
+  b.style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+loadConversations();
+loadAgents();
+setInterval(loadConversations, 30000);
+</script>
+</body>
+</html>
